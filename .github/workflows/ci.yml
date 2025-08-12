@@ -1,0 +1,87 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+    paths-ignore: [ "**.md" ]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+
+jobs:
+  lint-test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod  
+          cache: true
+
+      - name: Go clean cache
+        run: go clean -cache       
+
+      - name: Verify go.mod is tidy
+        run: |
+          set -euo pipefail
+          go mod tidy
+          files=(go.mod)
+          [[ -f go.sum ]] && files+=(go.sum)
+          git diff --exit-code -- "${files[@]}"
+
+      - name: Formatting (gofmt -s)
+        run: |
+          changes=$(gofmt -s -l . || true)
+          if [ -n "$changes" ]; then
+            echo "::error::Run 'gofmt -s -w' on:"
+            echo "$changes"
+            exit 1
+          fi
+
+      - name: Lint (golangci-lint)
+        uses: golangci/golangci-lint-action@v6
+        env:
+          GOTOOLCHAIN: local
+        with:
+          version: latest               
+          args: --timeout=5m --out-format=github-actions
+
+      - name: Govulncheck
+        uses: golang/govulncheck-action@v1
+
+      - name: Build (CLI & server)
+        env:
+          VERSION: ${{ github.sha }}
+        run: |
+          mkdir -p build
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o build/sft  ./cmd/sft
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o build/sftd ./cmd/sftd
+
+      - name: Test (race + coverage)
+        run: |
+          set -euo pipefail
+          PKGS=$(go list ./... | grep -v '/cmd/' || true)
+          if [ -z "$PKGS" ]; then
+            echo "No library packages yet; skipping coverage gate."
+            go test ./... -race -count=1
+            : > coverage.out
+            exit 0
+          fi
+          go test $PKGS -race -covermode=atomic -shuffle=on -count=1 -coverprofile=coverage.out
+          go tool cover -func=coverage.out | tail -n 1
+          pct=$(go tool cover -func=coverage.out | awk '/total:/ { sub(/%/, "", $3); print $3 }')
+          awk "BEGIN {exit !($pct >= 60)}" || { echo "::error::Coverage ${pct}% < 60%"; exit 1; }
+
+      - name: Upload artifacts
+        if: always()                      
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-artifacts
+          path: |
+            build/sft
+            build/sftd
+            coverage.out
+          if-no-files-found: ignore

@@ -1,0 +1,54 @@
+name: Release
+on:
+  push:
+    tags: [ "v*" ]
+permissions:
+  contents: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goos:   [ linux, windows, darwin ]
+        goarch: [ amd64, arm64 ]
+        exclude:
+          - goos: windows
+            goarch: arm64
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - name: Build
+        env:
+          VERSION: ${{ github.ref_name }} # vX.Y.Z
+          GOOS:   ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p dist
+          ext=""
+          [ "$GOOS" = "windows" ] && ext=".exe"
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "dist/sft_${GOOS}_${GOARCH}${ext}"  ./cmd/sft
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "dist/sftd_${GOOS}_${GOARCH}${ext}" ./cmd/sftd
+          (cd dist && sha256sum * > checksums.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { pattern: dist-*, merge-multiple: true, path: dist }
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

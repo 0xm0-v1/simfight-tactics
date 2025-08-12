@@ -1,0 +1,51 @@
+# .golangci.yml
+run:
+  timeout: 5m
+  tests: true
+  allow-parallel-runners: true
+
+linters:
+  enable:
+    - govet          
+    - staticcheck    
+    - gosimple       
+    - ineffassign    
+    - errcheck      
+    - unused        
+    - typecheck      
+    - gofmt         
+    - misspell      
+  disable:
+    - dupl
+    - gocyclo
+    - funlen
+    - lll
+    - wrapcheck
+    - depguard
+
+linters-settings:
+  errcheck:
+    exclude-functions:
+      - fmt.Fprintf
+      - fmt.Printf
+      - fmt.Fprintln
+      - fmt.Println
+      - '(*bytes.Buffer).Write'
+      - '(io.Writer).Write'
+      - '(net/http.ResponseWriter).Write'
+  gofmt:
+    simplify: true
+  staticcheck:
+    checks: [ "all" ]
+  misspell:
+    locale: US
+
+issues:
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    - path: _test\.go
+      linters: [ errcheck ]
+      text: 'Error return value of .+ is not checked'
+
