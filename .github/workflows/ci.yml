@@ -20,6 +20,7 @@ jobs:
         with:
           go-version-file: go.mod  
           cache: true
+          check-latest: true
 
       - name: Go clean cache
         run: go clean -cache       
@@ -46,7 +47,8 @@ jobs:
         env:
           GOTOOLCHAIN: local
         with:
-          version: latest               
+          version: latest
+          install-mode: goinstall 
           args: --timeout=5m --out-format=github-actions
 
       - name: Govulncheck
