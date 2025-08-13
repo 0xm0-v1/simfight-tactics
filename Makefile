@@ -15,7 +15,7 @@ build:
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o bin/$(APP) ./cmd/sftd
 
 test:
-	go test -race -cover -coverprofile=coverage.out $(PKG)
+	go test ./...
 
 lint:
 	golangci-lint run
