@@ -25,9 +25,9 @@ func TestValidateRejectsNonFinite(t *testing.T) {
 		{"Armor_NegInf", WithArmor(math.Inf(-1))},
 
 		// Resource path → caught at option boundary (WithMana)
-		{"Mana_NaN", WithMana(math.NaN(), math.NaN(), math.NaN(), math.NaN())},
-		{"Mana_PosInf", WithMana(math.Inf(+1), math.Inf(+1), math.Inf(+1), math.Inf(+1))},
-		{"Mana_NegInf", WithMana(math.Inf(-1), math.Inf(-1), math.Inf(-1), math.Inf(-1))},
+		{"Mana_NaN", WithMana(math.NaN(), math.NaN(), math.NaN(), math.NaN(), math.NaN())},
+		{"Mana_PosInf", WithMana(math.Inf(+1), math.Inf(+1), math.Inf(+1), math.Inf(+1), math.Inf(+1))},
+		{"Mana_NegInf", WithMana(math.Inf(-1), math.Inf(-1), math.Inf(-1), math.Inf(-1), math.Inf(-1))},
 	}
 
 	for _, tc := range cases {

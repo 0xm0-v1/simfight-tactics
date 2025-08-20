@@ -3,28 +3,60 @@ package units
 import "math"
 
 // sanitizeOffense enforces data invariants only.
-// Mechanics (AS cap 5.0/6.0, crit overflow 2:1, anti-heal, etc.) live in the engine.
 func sanitizeOffense(o OffenseStats) OffenseStats {
 	return OffenseStats{
-		Range:  nonNeg(o.Range),
-		BaseAD: nonNeg(o.BaseAD),
-		AD:     nonNeg(o.AD),
-		AP:     nonNeg(o.AP),
-		AS:     nonNeg(o.AS),
-		// Do NOT clamp to [0,1] here: engine converts overflow >100% to crit damage (2:1).
-		CritChance: nonNeg(o.CritChance),
-		CritDamage: maxf(1.0, o.CritDamage),
-		Omnivamp:   nonNeg(o.Omnivamp),
+		Range:      nonNeg(o.Range),
+		BaseAD:     nonNeg(o.BaseAD),
+		AD:         nonNeg(o.AD),
+		AP:         nonNeg(o.AP),
+		AS:         nonNeg(o.AS),
+		CritChance: nonNeg(o.CritChance),    // engine handles >1 overflow
+		CritDamage: maxf(1.0, o.CritDamage), // never below 1.0
+		Omnivamp:   sanitizeOmnivamp(o.Omnivamp),
 		DamageAmp:  o.DamageAmp, // may be negative or positive
 	}
 }
 
+func sanitizeOmnivamp(v Omnivamp) Omnivamp {
+	min := nonNeg(v.OmnivampMin)
+	max := nonNeg(v.OmnivampMax)
+	if max < min {
+		max = min // ensure max >= min
+	}
+	// keep NaN/Inf as-is so Validate() can fail fast; else clamp to [min,max]
+	current := v.CurrentOmnivamp
+	if !(math.IsNaN(current) || math.IsInf(current, 0)) {
+		current = clamp(current, min, max)
+	}
+	return Omnivamp{
+		OmnivampMin:     min,
+		OmnivampMax:     max,
+		CurrentOmnivamp: current,
+	}
+}
+
 func sanitizeDefense(d DefenseStats) DefenseStats {
+	minTP := -1
+	maxTP := 1
 	return DefenseStats{
-		HP:         nonNeg(d.HP),
-		Armor:      nonNeg(d.Armor),
-		MR:         nonNeg(d.MR),
-		Durability: nonNeg(d.Durability),
+		HP:             nonNeg(d.HP),
+		Armor:          nonNeg(d.Armor),
+		MR:             nonNeg(d.MR),
+		Durability:     nonNeg(d.Durability),
+		TargetPriority: clamp(d.TargetPriority, float64(minTP), float64(maxTP)),
+	}
+}
+
+func sanitizeManaFromDamage(m ManaFromDamage) ManaFromDamage {
+	// Non-finites are propagated to validation by nonNeg
+	pre := nonNeg(m.PreMitigationRatio)
+	post := nonNeg(m.PostMitigationRatio)
+	cap := nonNeg(m.PerInstanceCap)
+	return ManaFromDamage{
+		Enabled:             m.Enabled,
+		PreMitigationRatio:  pre,
+		PostMitigationRatio: post,
+		PerInstanceCap:      cap,
 	}
 }
 
@@ -34,10 +66,12 @@ func sanitizeResource(r Resource) Resource {
 	max := maxf(min, r.ManaMax)           // ensure max >= min
 	start := clamp(r.ManaStart, min, max) // ensure start in [min, max]
 	return Resource{
-		ManaMin:   min,
-		ManaMax:   max,
-		ManaStart: start,
-		ManaRegen: maxf(0, r.ManaRegen),
+		ManaMin:        min,
+		ManaMax:        max,
+		ManaStart:      start,
+		ManaRegen:      maxf(0, r.ManaRegen),
+		ManaFromDamage: sanitizeManaFromDamage(r.ManaFromDamage),
+		ManaPerHit:     nonNeg(r.ManaPerHit),
 	}
 }
 
@@ -49,7 +83,7 @@ func sanitizeResource(r Resource) Resource {
 // non-finites are left as-is so Validate() can fail fast.
 func nonNeg(v float64) float64 {
 	if math.IsNaN(v) || math.IsInf(v, 0) {
-		return v // propagate non-finite to validation
+		return v
 	}
 	if v < 0 {
 		return 0
@@ -57,7 +91,7 @@ func nonNeg(v float64) float64 {
 	return v
 }
 
-func clamp(v, lo, hi float64) float64 {
+func clamp(v float64, lo, hi float64) float64 {
 	if v < lo {
 		return lo
 	}
