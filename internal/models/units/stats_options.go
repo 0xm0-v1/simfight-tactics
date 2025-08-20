@@ -35,18 +35,23 @@ func (s Stats) With(opts ...Option) (Stats, error) {
 }
 
 // --- Offense (granular setters) ---
-// Set RAW values; sanitization happens in sanitizeOffense via setOffense wrapper.
-func WithRange(v float64) Option  { return setOffense(func(o *OffenseStats) { o.Range = v }) }
-func WithBaseAD(v float64) Option { return setOffense(func(o *OffenseStats) { o.BaseAD = v }) }
-func WithAD(v float64) Option     { return setOffense(func(o *OffenseStats) { o.AD = v }) }
-func WithAP(v float64) Option     { return setOffense(func(o *OffenseStats) { o.AP = v }) }
-func WithAS(v float64) Option     { return setOffense(func(o *OffenseStats) { o.AS = v }) }
-
-// Do NOT clamp to 1 here: >100% crit is converted to crit damage by the engine (2:1 overflow rule).
+func WithRange(v float64) Option      { return setOffense(func(o *OffenseStats) { o.Range = v }) }
+func WithBaseAD(v float64) Option     { return setOffense(func(o *OffenseStats) { o.BaseAD = v }) }
+func WithAD(v float64) Option         { return setOffense(func(o *OffenseStats) { o.AD = v }) }
+func WithAP(v float64) Option         { return setOffense(func(o *OffenseStats) { o.AP = v }) }
+func WithAS(v float64) Option         { return setOffense(func(o *OffenseStats) { o.AS = v }) }
 func WithCritChance(v float64) Option { return setOffense(func(o *OffenseStats) { o.CritChance = v }) }
 func WithCritDamage(v float64) Option { return setOffense(func(o *OffenseStats) { o.CritDamage = v }) }
-func WithOmnivamp(v float64) Option   { return setOffense(func(o *OffenseStats) { o.Omnivamp = v }) }
+func WithOmnivamp(v Omnivamp) Option  { return setOffense(func(o *OffenseStats) { o.Omnivamp = v }) }
 func WithDamageAmp(v float64) Option  { return setOffense(func(o *OffenseStats) { o.DamageAmp = v }) }
+
+func WithOmnivampValues(min, max, current float64) Option {
+	return WithOmnivamp(Omnivamp{
+		OmnivampMin:     min,
+		OmnivampMax:     max,
+		CurrentOmnivamp: current,
+	})
+}
 
 // Bulk setter with sanitization.
 func WithOffense(off OffenseStats) Option {
@@ -61,6 +66,9 @@ func WithHP(v float64) Option         { return setDefense(func(d *DefenseStats) 
 func WithArmor(v float64) Option      { return setDefense(func(d *DefenseStats) { d.Armor = v }) }
 func WithMR(v float64) Option         { return setDefense(func(d *DefenseStats) { d.MR = v }) }
 func WithDurability(v float64) Option { return setDefense(func(d *DefenseStats) { d.Durability = v }) }
+func WithTargetPriority(v float64) Option {
+	return setDefense(func(d *DefenseStats) { d.TargetPriority = v })
+}
 
 // Bulk setter with sanitization.
 func WithDefense(def DefenseStats) Option {
@@ -71,18 +79,18 @@ func WithDefense(def DefenseStats) Option {
 }
 
 // --- Resource ---
-func WithMana(min, max, start, regen float64) Option {
+func WithMana(min, max, start, regen, perHit float64) Option {
 	return func(s *Stats) error {
-		// Validation at the boundary (reject non-finite early)
-		if anyNonFinite(min, max, start, regen) {
+		if anyNonFinite(min, max, start, regen, perHit) {
 			return fmt.Errorf("resource contains non-finite values")
 		}
-		// Sanitation (cross-field invariants)
 		s.Resource = sanitizeResource(Resource{
-			ManaMin:   min,
-			ManaMax:   max,
-			ManaStart: start,
-			ManaRegen: regen,
+			ManaMin:        min,
+			ManaMax:        max,
+			ManaStart:      start,
+			ManaRegen:      regen,
+			ManaFromDamage: s.Resource.ManaFromDamage, // preserve current sub-struct
+			ManaPerHit:     perHit,
 		})
 		return nil
 	}
@@ -90,10 +98,33 @@ func WithMana(min, max, start, regen float64) Option {
 
 func WithResource(res Resource) Option {
 	return func(s *Stats) error {
-		if anyNonFinite(res.ManaMin, res.ManaMax, res.ManaStart, res.ManaRegen) {
+		if anyNonFinite(
+			res.ManaMin, res.ManaMax, res.ManaStart, res.ManaRegen, res.ManaPerHit,
+			res.ManaFromDamage.PreMitigationRatio,
+			res.ManaFromDamage.PostMitigationRatio,
+			res.ManaFromDamage.PerInstanceCap,
+		) {
 			return fmt.Errorf("resource contains non-finite values")
 		}
 		s.Resource = sanitizeResource(res)
+		return nil
+	}
+}
+
+// WithManaFromDamage sets the mana-from-hit rules.
+func WithManaFromDamage(enabled bool, preRatio, postRatio, perHitCap float64) Option {
+	return func(s *Stats) error {
+		if anyNonFinite(preRatio, postRatio, perHitCap) {
+			return fmt.Errorf("mana_from_damage contains non-finite values")
+		}
+		cur := s.Resource
+		cur.ManaFromDamage = sanitizeManaFromDamage(ManaFromDamage{
+			Enabled:             enabled,
+			PreMitigationRatio:  preRatio,
+			PostMitigationRatio: postRatio,
+			PerInstanceCap:      perHitCap,
+		})
+		s.Resource = sanitizeResource(cur)
 		return nil
 	}
 }
@@ -120,7 +151,7 @@ func setDefense(f func(*DefenseStats)) Option {
 			return fmt.Errorf("nil Stats")
 		}
 		tmp := s.Defense
-		f(&tmp) // set RAW input
+		f(&tmp)
 		s.Defense = sanitizeDefense(tmp)
 		return nil
 	}

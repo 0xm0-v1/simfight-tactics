@@ -5,12 +5,72 @@ import (
 	"testing"
 )
 
-// build is a test helper that always enforces the champion Range (>=1) so validation passes,
-// then returns sanitized Stats built from the provided options.
+// ---------- Test constants (avoid magic numbers) ----------
+const (
+	// General
+	rangeMin1 = 1.0
+	zero      = 0.0
+	negLarge  = -10.0
+	negSmall  = -1.0
+
+	// Offense
+	asHighNoCap       = 7.0
+	asNeg             = -0.3
+	critDamageFloor   = 1.0
+	critDamageDefault = 1.4
+	critDamageLow     = 0.5
+	critDamageHigh    = 1.7
+	critChanceDefault = 0.25
+	ad55              = 55.0
+	ad60              = 60.0
+	as090             = 0.9
+
+	// Defense
+	armor30 = 30.0
+
+	// Resource presets
+	manaMin0    = 0.0
+	manaMax60   = 60.0
+	manaStart30 = 30.0
+	manaRegen1  = 1.0
+	manaRegen3  = 3.0
+	manaRegen5  = 5.0
+
+	// Resource scenarios
+	mStartAboveMaxMin   = 100.0
+	mStartAboveMaxMax   = 200.0
+	mStartAboveMaxStart = 300.0
+
+	mStartBelowMinMin   = 50.0
+	mStartBelowMinMax   = 120.0
+	mStartBelowMinStart = 25.0
+
+	mMaxBelowMinMin   = 80.0
+	mMaxBelowMinMax   = 30.0
+	mMaxBelowMinStart = 80.0
+
+	mNegMinMin   = -10.0
+	mNegMinMax   = 40.0
+	mNegMinStart = 0.0
+	mNegMinRegen = -5.0
+
+	// Omnivamp
+	omniNeg   = -0.10
+	omniStart = 0.10
+)
+
+// ---------- Test helper to express Omnivamp override with the new struct ----------
+// NOTE: This helper only updates Offense.Omnivamp (via WithOmnivampValues) and
+// does NOT overwrite other Offense fields.
+func withOmnivamp(min, max, start float64) Option {
+	return WithOmnivampValues(min, max, start)
+}
+
+// build enforces a valid minimal Range and returns sanitized Stats built from options.
+// WithRange(1) is prepended so validation passes unless an explicit WithRange later overrides it.
 func build(t *testing.T, opts ...Option) Stats {
 	t.Helper()
-	// Put WithRange(1) FIRST so an explicit WithRange(...) in opts can override it.
-	opts = append([]Option{WithRange(1)}, opts...)
+	opts = append([]Option{WithRange(rangeMin1)}, opts...)
 	s, err := NewStats(opts...)
 	if err != nil {
 		t.Fatalf("build failed: %v", err)
@@ -22,49 +82,50 @@ func TestSanitize_NonNegatives(t *testing.T) {
 	t.Parallel()
 
 	s := build(t,
-		WithAD(-10),
-		WithAP(-1),
-		WithHP(-5),
-		WithArmor(-2),
-		WithMR(-3),
-		WithDurability(-4),
-		WithOmnivamp(-0.25),
+		WithAD(negLarge),
+		WithAP(negSmall),
+		WithHP(negLarge/2),
+		WithArmor(negSmall*2),
+		WithMR(negSmall*3),
+		WithDurability(negSmall*4),
+		withOmnivamp(zero, zero, omniNeg), // will clamp start to 0
 	)
 
-	if s.Offense.AD != 0 {
-		t.Errorf("AD: want 0, got %v", s.Offense.AD)
+	if s.Offense.AD != zero {
+		t.Errorf("AD: want %v, got %v", zero, s.Offense.AD)
 	}
-	if s.Offense.AP != 0 {
-		t.Errorf("AP: want 0, got %v", s.Offense.AP)
+	if s.Offense.AP != zero {
+		t.Errorf("AP: want %v, got %v", zero, s.Offense.AP)
 	}
-	if s.Defense.HP != 0 {
-		t.Errorf("HP: want 0, got %v", s.Defense.HP)
+	if s.Defense.HP != zero {
+		t.Errorf("HP: want %v, got %v", zero, s.Defense.HP)
 	}
-	if s.Defense.Armor != 0 {
-		t.Errorf("Armor: want 0, got %v", s.Defense.Armor)
+	if s.Defense.Armor != zero {
+		t.Errorf("Armor: want %v, got %v", zero, s.Defense.Armor)
 	}
-	if s.Defense.MR != 0 {
-		t.Errorf("MR: want 0, got %v", s.Defense.MR)
+	if s.Defense.MR != zero {
+		t.Errorf("MR: want %v, got %v", zero, s.Defense.MR)
 	}
-	if s.Defense.Durability != 0 {
-		t.Errorf("Durability: want 0, got %v", s.Defense.Durability)
+	if s.Defense.Durability != zero {
+		t.Errorf("Durability: want %v, got %v", zero, s.Defense.Durability)
 	}
-	if s.Offense.Omnivamp != 0 {
-		t.Errorf("Omnivamp: want 0, got %v", s.Offense.Omnivamp)
+	wantOmni := Omnivamp{OmnivampMin: zero, OmnivampMax: zero, CurrentOmnivamp: zero} // clamped to 0
+	if !reflect.DeepEqual(s.Offense.Omnivamp, wantOmni) {
+		t.Errorf("Omnivamp: want %+v, got %+v", wantOmni, s.Offense.Omnivamp)
 	}
 }
 
 func TestSanitize_CritDamageFloor(t *testing.T) {
 	t.Parallel()
 
-	s := build(t, WithCritDamage(0.5))
-	if s.Offense.CritDamage != 1.0 {
-		t.Errorf("CritDamage: want 1.0 floor, got %v", s.Offense.CritDamage)
+	s := build(t, WithCritDamage(critDamageLow))
+	if s.Offense.CritDamage != critDamageFloor {
+		t.Errorf("CritDamage: want %v floor, got %v", critDamageFloor, s.Offense.CritDamage)
 	}
 
-	s2 := build(t, WithCritDamage(1.7))
-	if s2.Offense.CritDamage != 1.7 {
-		t.Errorf("CritDamage: want unchanged 1.7, got %v", s2.Offense.CritDamage)
+	s2 := build(t, WithCritDamage(critDamageHigh))
+	if s2.Offense.CritDamage != critDamageHigh {
+		t.Errorf("CritDamage: want unchanged %v, got %v", critDamageHigh, s2.Offense.CritDamage)
 	}
 }
 
@@ -72,15 +133,15 @@ func TestSanitize_AttackSpeed(t *testing.T) {
 	t.Parallel()
 
 	t.Run("NegativeClampedToZero", func(t *testing.T) {
-		s := build(t, WithAS(-0.3))
-		if s.Offense.AS != 0 {
-			t.Errorf("AS: want 0 when negative, got %v", s.Offense.AS)
+		s := build(t, WithAS(asNeg))
+		if s.Offense.AS != zero {
+			t.Errorf("AS: want %v when negative, got %v", zero, s.Offense.AS)
 		}
 	})
 
 	t.Run("NoGameplayCapApplied", func(t *testing.T) {
-		s := build(t, WithAS(7.0))
-		if s.Offense.AS != 7.0 {
+		s := build(t, WithAS(asHighNoCap))
+		if s.Offense.AS != asHighNoCap {
 			t.Errorf("AS: should be unchanged (no cap in data layer), got %v", s.Offense.AS)
 		}
 	})
@@ -90,36 +151,36 @@ func TestSanitize_ResourceInvariants(t *testing.T) {
 	t.Parallel()
 
 	t.Run("StartAboveMax_ClampedToMax", func(t *testing.T) {
-		s := build(t, WithMana(100, 200, 300, 5)) // start > max
-		if s.Resource.ManaMin != 100 || s.Resource.ManaMax != 200 || s.Resource.ManaStart != 200 || s.Resource.ManaRegen != 5 {
+		s := build(t, WithMana(mStartAboveMaxMin, mStartAboveMaxMax, mStartAboveMaxStart, manaRegen5, zero)) // start > max
+		if s.Resource.ManaMin != mStartAboveMaxMin || s.Resource.ManaMax != mStartAboveMaxMax || s.Resource.ManaStart != mStartAboveMaxMax || s.Resource.ManaRegen != manaRegen5 {
 			t.Errorf("Resource clamp to Max failed: %+v", s.Resource)
 		}
 	})
 
 	t.Run("StartBelowMin_ClampedToMin", func(t *testing.T) {
-		s := build(t, WithMana(50, 120, 25, 3)) // start < min
-		if s.Resource.ManaStart != 50 {
+		s := build(t, WithMana(mStartBelowMinMin, mStartBelowMinMax, mStartBelowMinStart, manaRegen3, zero)) // start < min
+		if s.Resource.ManaStart != mStartBelowMinMin {
 			t.Errorf("ManaStart clamp to Min failed: got %v", s.Resource.ManaStart)
 		}
 	})
 
 	t.Run("MaxBelowMin_AdjustedUpToMin", func(t *testing.T) {
-		s := build(t, WithMana(80, 30, 80, 1)) // max < min
-		if s.Resource.ManaMax != 80 {
+		s := build(t, WithMana(mMaxBelowMinMin, mMaxBelowMinMax, mMaxBelowMinStart, manaRegen1, zero)) // max < min
+		if s.Resource.ManaMax != mMaxBelowMinMin {
 			t.Errorf("ManaMax bumped to Min failed: got %v", s.Resource.ManaMax)
 		}
-		if s.Resource.ManaStart != 80 {
+		if s.Resource.ManaStart != mMaxBelowMinMin {
 			t.Errorf("ManaStart re-clamped to new Max failed: got %v", s.Resource.ManaStart)
 		}
 	})
 
 	t.Run("NegativeMinAndRegen_ClampedToZero", func(t *testing.T) {
-		s := build(t, WithMana(-10, 40, 0, -5))
-		if s.Resource.ManaMin != 0 {
-			t.Errorf("ManaMin: want 0, got %v", s.Resource.ManaMin)
+		s := build(t, WithMana(mNegMinMin, mNegMinMax, mNegMinStart, mNegMinRegen, zero))
+		if s.Resource.ManaMin != zero {
+			t.Errorf("ManaMin: want %v, got %v", zero, s.Resource.ManaMin)
 		}
-		if s.Resource.ManaRegen != 0 {
-			t.Errorf("ManaRegen: want 0, got %v", s.Resource.ManaRegen)
+		if s.Resource.ManaRegen != zero {
+			t.Errorf("ManaRegen: want %v, got %v", zero, s.Resource.ManaRegen)
 		}
 	})
 }
@@ -127,18 +188,21 @@ func TestSanitize_ResourceInvariants(t *testing.T) {
 func TestSanitize_BulkVsGranular_Offense(t *testing.T) {
 	t.Parallel()
 
+	// Bulk path: full WithOffense block
 	a := build(t,
 		WithOffense(OffenseStats{
-			Range:      1, // pour passer Validate()
-			AD:         55,
-			Omnivamp:   -0.10,                        // sera clampé à 0
-			CritChance: Default().Offense.CritChance, // 0.25
-			CritDamage: Default().Offense.CritDamage, // 1.4
+			Range:      rangeMin1, // ensure validation passes
+			AD:         ad55,
+			Omnivamp:   Omnivamp{OmnivampMin: zero, OmnivampMax: zero, CurrentOmnivamp: omniNeg}, // will clamp to 0
+			CritChance: critChanceDefault,
+			CritDamage: critDamageDefault,
 		}),
 	)
+
+	// Granular path: independent setters + omnivamp helper
 	b := build(t,
-		WithAD(55),
-		WithOmnivamp(-0.10),
+		WithAD(ad55),
+		withOmnivamp(zero, zero, omniNeg),
 	)
 
 	if !reflect.DeepEqual(a.Offense, b.Offense) {
@@ -150,16 +214,16 @@ func TestSanitize_Idempotent(t *testing.T) {
 	t.Parallel()
 
 	s1 := build(t,
-		WithAD(60),
-		WithAS(0.9),
-		WithArmor(30),
-		WithMana(0, 60, 30, 5),
-		WithCritDamage(1.4),
-		WithOmnivamp(0.1),
+		WithAD(ad60),
+		WithAS(as090),
+		WithArmor(armor30),
+		WithMana(manaMin0, manaMax60, manaStart30, manaRegen5, zero),
+		WithCritDamage(critDamageDefault),
+		withOmnivamp(zero, zero, omniStart),
 	)
 
-	// Re-run normalization without changes (With() no options).
-	s2, err := s1.With() // applies Validate() + normalized() again
+	// Re-run normalization with no changes (With() without options).
+	s2, err := s1.With()
 	if err != nil {
 		t.Fatalf("unexpected error on With(): %v", err)
 	}

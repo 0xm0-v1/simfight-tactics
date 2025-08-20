@@ -1,0 +1,81 @@
+{
+    "sft": {
+        "version": "set15-15.2",
+        "updated_at": "2025-08-12",
+        "sources": [
+            "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-15-1-notes-2025/",
+            "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-15-2-notes/"
+        ]
+    },
+
+    "damage_type": [
+        "Attack", 
+        "Magic", 
+        "Hybrid"
+    ],
+
+    "role_type": [
+        "Tank",
+        "Fighter",
+        "Assassin",
+        "Marksman",
+        "Caster",
+        "Specialist"
+  ],
+
+  
+    "roles": [
+        "Attack Tank", "Attack Fighter", "Attack Assassin", "Attack Marksman", "Attack Caster", "Attack Specialist",
+        "Magic Tank", "Magic Fighter", "Magic Assassin", "Magic Marksman", "Magic Caster", "Magic Specialist",
+        "Hybrid Tank", "Hybrid Fighter", "Hybrid Assassin", "Hybrid Marksman", "Hybrid Caster", "Hybrid Specialist"
+    ],
+
+    "stats_per_roles": {
+        "tank": {
+            "defense": {
+                "target_priority": 1.0
+            },
+            "resource": {
+                "mana_from_damage": {
+                    "enabled": true,
+                    "pre_mitigation_ratio": 0.01,
+                    "post_mitigation_ratio": 0.03,
+                    "per_instance_cap": 42.5
+
+                },
+                "mana_per_hit": 5.0
+            }
+        },
+        "fighter": {
+            "offense": {
+                "omnivamp": {
+                    "omnivamp_min": 0.08,
+                    "omnivamp_max": 0.2,
+                    "current_omnivamp": 0.08
+                }
+            },
+            "resource": {
+                "mana_per_hit": 10.0
+            }
+        },
+        "assassin": {
+            "defense": {
+                "target_priority": -1.0
+            },
+            "resource": {
+                "mana_per_hit": 10.0
+            }
+        },
+        "marksman": {
+            "resource": {
+                "mana_per_hit": 10.0
+            }
+        },
+        "caster": {
+            "resource": {
+                "mana_per_hit": 7.0,
+                "mana_regen": 2.0
+            }
+        }
+    }
+}
